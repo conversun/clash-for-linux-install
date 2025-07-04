@@ -79,6 +79,16 @@ _download_mihomo() {
     _okcat '✅' "下载完成：$output_file"
 }
 
+# 获取当前内核版本
+_get_current_version() {
+    if [ -f "$BIN_KERNEL" ] && [ -x "$BIN_KERNEL" ]; then
+        local current_version=$("$BIN_KERNEL" -v 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        echo "$current_version"
+    else
+        echo ""
+    fi
+}
+
 # 备份当前内核
 _backup_kernel() {
     local backup_dir="${CLASH_BASE_DIR}/backup"
@@ -158,7 +168,23 @@ function update_kernel() {
         [ -z "$version" ] && _error_quit "无法从所有 API 获取版本信息"
     fi
     
-    _okcat '📌' "准备更新到版本：$version"
+    _okcat '📌' "目标版本：$version"
+    
+    # 检查当前版本
+    local current_version=$(_get_current_version)
+    if [ -n "$current_version" ]; then
+        _okcat '📋' "当前版本：$current_version"
+        
+        # 比较版本是否相同
+        if [ "$current_version" = "$version" ]; then
+            _okcat '✅' "当前版本已是最新版本，无需更新"
+            return 0
+        fi
+    else
+        _okcat '⚠️' "未检测到当前内核或内核不可执行"
+    fi
+    
+    _okcat '🔄' "开始更新到版本：$version"
     
     # 备份当前内核
     _backup_kernel
