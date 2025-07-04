@@ -60,7 +60,21 @@ _download_mihomo() {
             --retry 3 \
             --output "$output_file" \
             "${URL_GH_PROXY}${download_url}"
-    } || _error_quit "下载失败：请检查网络连接或手动下载"
+    } || {
+        _failcat "gh-proxy 下载失败，尝试使用 jsdelivr CDN..."
+        local jsdelivr_url="https://cdn.jsdelivr.net/gh/MetaCubeX/mihomo@releases/download/${version}/mihomo-linux-${arch_name}-${version}.gz"
+        curl \
+            --location \
+            --progress-bar \
+            --show-error \
+            --fail \
+            --insecure \
+            --connect-timeout 30 \
+            --retry 3 \
+            --output "$output_file" \
+            $proxy_opts \
+            "$jsdelivr_url"
+    } || _error_quit "所有下载源均失败：请检查网络连接或手动下载"
     
     _okcat '✅' "下载完成：$output_file"
 }
@@ -127,9 +141,21 @@ function update_kernel() {
     # 如果没有提供版本号，获取最新版本
     if [ -z "$version" ]; then
         _okcat '🔍' "获取最新版本信息..."
-        local api_url="https://api.github.com/repos/MetaCubeX/mihomo/releases/latest"
-        version=$(curl -s "$api_url" | grep -oE '"tag_name":\s*"[^"]+' | cut -d'"' -f4)
-        [ -z "$version" ] && _error_quit "无法获取最新版本信息"
+        
+        # 尝试 GitHub API
+        local github_api="https://api.github.com/repos/MetaCubeX/mihomo/releases/latest"
+        version=$(curl -s "$github_api" | grep -oE '"tag_name":\s*"[^"]+' | cut -d'"' -f4 2>/dev/null)
+        
+        # 如果 GitHub API 失败，尝试 jsdelivr API
+        if [ -z "$version" ]; then
+            _failcat "GitHub API 获取失败，尝试 jsdelivr API..."
+            local jsdelivr_api="https://data.jsdelivr.com/v1/packages/gh/MetaCubeX/mihomo"
+            version=$(curl -s "$jsdelivr_api" | grep -oE '"version":\s*"[^"]+' | head -1 | cut -d'"' -f4 2>/dev/null)
+            # 如果版本号不以 v 开头，添加 v 前缀
+            [ -n "$version" ] && [[ ! "$version" =~ ^v ]] && version="v$version"
+        fi
+        
+        [ -z "$version" ] && _error_quit "无法从所有 API 获取版本信息"
     fi
     
     _okcat '📌' "准备更新到版本：$version"
