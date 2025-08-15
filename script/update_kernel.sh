@@ -16,7 +16,7 @@ _download_mihomo() {
     # 架构映射
     case "$arch" in
         x86_64)
-            arch_name="amd64-compatible"
+            arch_name="amd64-v3"
             ;;
         aarch64)
             arch_name="arm64"
@@ -226,12 +226,12 @@ function show_help() {
 
 参数:
     URL      完整的内核下载地址
-    VERSION  版本号（如 v1.19.11）
+    VERSION  版本号（如 v1.19.12）
     
 示例:
     $(basename "$0")                    # 更新到最新版本
-    $(basename "$0") v1.19.11           # 更新到指定版本
-    $(basename "$0") https://github.com/MetaCubeX/mihomo/releases/download/v1.19.11/mihomo-linux-amd64-compatible-v1.19.11.gz
+    $(basename "$0") v1.19.12           # 更新到指定版本
+    $(basename "$0") https://github.com/MetaCubeX/mihomo/releases/download/v1.19.12/mihomo-linux-amd64-v3-v1.19.12.gz
 
 EOF
 }
