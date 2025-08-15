@@ -34,7 +34,9 @@ _download_mihomo() {
     esac
     
     local download_url="https://github.com/MetaCubeX/mihomo/releases/download/${version}/mihomo-linux-${arch_name}-${version}.gz"
-    local output_file="${ZIP_BASE_DIR}/mihomo-linux-${arch_name}-${version}.gz"
+    local download_dir="$(dirname "$0")/downloads"
+    mkdir -p "$download_dir"
+    local output_file="${download_dir}/mihomo-linux-${arch_name}-${version}.gz"
     
     _okcat '⏳' "正在下载 ${kernel_name} ${version} (${arch_name})..."
     
@@ -227,7 +229,8 @@ function update_kernel() {
     _download_mihomo "$version" "$arch"
     
     # 查找下载的文件
-    local kernel_gz=$(find "$ZIP_BASE_DIR" -name "mihomo-linux-*-${version}.gz" -type f | head -1)
+    local download_dir="$(dirname "$0")/downloads"
+    local kernel_gz=$(find "$download_dir" -name "mihomo-linux-*-${version}.gz" -type f | head -1)
     [ -z "$kernel_gz" ] && _error_quit "未找到下载的内核文件"
     
     # 安装新内核
