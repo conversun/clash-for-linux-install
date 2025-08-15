@@ -15,6 +15,10 @@ _download_mihomo() {
     
     # 架构映射
     case "$arch" in
+        custom:*)
+            # 使用自定义架构，去掉 custom: 前缀
+            arch_name="${arch#custom:}"
+            ;;
         x86_64)
             arch_name="amd64-v3"
             ;;
@@ -135,9 +139,36 @@ _install_kernel() {
 
 # 主函数
 function update_kernel() {
-    local kernel_url=$1
+    local force_update=false
+    local kernel_url=""
+    local custom_arch=""
+    
+    # 解析参数
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -f|--force)
+                force_update=true
+                shift
+                ;;
+            -a|--arch)
+                custom_arch=$2
+                shift 2
+                ;;
+            *)
+                kernel_url=$1
+                shift
+                ;;
+        esac
+    done
+    
     local version
     local arch=$(uname -m)
+    
+    # 如果指定了自定义架构，使用自定义架构
+    if [ -n "$custom_arch" ]; then
+        _okcat '🔧' "使用指定架构：$custom_arch"
+        arch="custom:$custom_arch"
+    fi
     
     # 验证权限
     _is_root || _error_quit "需要 root 或 sudo 权限执行"
@@ -176,9 +207,12 @@ function update_kernel() {
         _okcat '📋' "当前版本：$current_version"
         
         # 比较版本是否相同
-        if [ "$current_version" = "$version" ]; then
+        if [ "$current_version" = "$version" ] && [ "$force_update" = false ]; then
             _okcat '✅' "当前版本已是最新版本，无需更新"
+            _okcat '💡' "使用 --force 参数可以强制重新安装"
             return 0
+        elif [ "$current_version" = "$version" ] && [ "$force_update" = true ]; then
+            _okcat '⚠️' "当前版本与目标版本相同，但将强制重新安装"
         fi
     else
         _okcat '⚠️' "未检测到当前内核或内核不可执行"
@@ -199,6 +233,9 @@ function update_kernel() {
     # 安装新内核
     _install_kernel "$kernel_gz"
     
+    # 清理下载文件
+    rm -f "$kernel_gz"
+    
     # 重启服务
     _okcat '🔄' "重启 ${BIN_KERNEL_NAME} 服务..."
     sudo systemctl start "$BIN_KERNEL_NAME" || {
@@ -216,22 +253,101 @@ function update_kernel() {
     } || _error_quit "服务启动失败，请检查日志"
 }
 
+# 列出可用版本
+function list_versions() {
+    _okcat '🔍' "获取可用版本列表..."
+    
+    # 尝试 GitHub API
+    local github_api="https://api.github.com/repos/MetaCubeX/mihomo/releases?per_page=10"
+    local versions=$(curl -s "$github_api" 2>/dev/null | grep -oE '"tag_name":\s*"[^"]+' | cut -d'"' -f4)
+    
+    if [ -z "$versions" ]; then
+        _failcat "无法从 GitHub API 获取版本列表"
+        return 1
+    fi
+    
+    # 获取当前版本
+    local current_version=$(_get_current_version)
+    
+    _okcat '📋' "可用版本列表："
+    echo
+    
+    local index=1
+    while IFS= read -r ver; do
+        if [ "$ver" = "$current_version" ]; then
+            echo "  $index. $ver (当前版本)"
+        else
+            echo "  $index. $ver"
+        fi
+        ((index++))
+    done <<< "$versions"
+    echo
+    
+    # 提示用户选择
+    read -p "请输入版本编号进行安装 (输入 q 退出): " choice
+    
+    if [ "$choice" = "q" ] || [ "$choice" = "Q" ]; then
+        _okcat '👋' "已取消操作"
+        return 0
+    fi
+    
+    # 验证输入
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt $((index-1)) ]; then
+        _error_quit "无效的选择：$choice"
+    fi
+    
+    # 获取选中的版本
+    local selected_version=$(echo "$versions" | sed -n "${choice}p")
+    
+    if [ -z "$selected_version" ]; then
+        _error_quit "无法获取选中的版本"
+    fi
+    
+    _okcat '✅' "已选择版本：$selected_version"
+    
+    # 调用更新函数
+    update_kernel "$selected_version"
+}
+
 # 显示帮助信息
 function show_help() {
     cat <<EOF
 内核更新脚本
 
 用法:
-    $(basename "$0") [URL|VERSION]
+    $(basename "$0") [选项] [URL|VERSION]
+
+选项:
+    -f, --force         强制更新（即使版本相同）
+    -a, --arch ARCH     指定架构版本（默认根据系统自动选择）
+    -l, --list          列出可用的版本（最近10个）
+    -h, --help          显示此帮助信息
+
+支持的架构:
+    amd64-v1            x86_64 基础版本（较旧CPU）
+    amd64-v2            x86_64 v2版本（2008年后的CPU，支持SSE4.2）
+    amd64-v3            x86_64 v3版本（2013年后的CPU，支持AVX2）- 默认
+    arm64               ARM 64位
+    armv7               ARM 32位 v7
 
 参数:
     URL      完整的内核下载地址
     VERSION  版本号（如 v1.19.12）
     
 示例:
-    $(basename "$0")                    # 更新到最新版本
+    $(basename "$0")                    # 更新到最新版本（自动选择架构）
+    $(basename "$0") -f                 # 强制更新到最新版本
+    $(basename "$0") -l                 # 列出可用版本
+    $(basename "$0") -a amd64-v2        # 使用 amd64-v2 架构更新到最新版本
     $(basename "$0") v1.19.12           # 更新到指定版本
-    $(basename "$0") https://github.com/MetaCubeX/mihomo/releases/download/v1.19.12/mihomo-linux-amd64-v3-v1.19.12.gz
+    $(basename "$0") -f v1.19.12        # 强制更新到指定版本
+    $(basename "$0") -a amd64-v1 v1.19.12  # 使用 amd64-v1 架构更新到指定版本
+
+架构选择建议:
+    - 如果CPU较旧（2008年前），使用 amd64-v1
+    - 如果CPU支持SSE4.2（2008-2013年），使用 amd64-v2
+    - 如果CPU支持AVX2（2013年后），使用 amd64-v3（推荐）
+    - ARM设备自动选择对应架构
 
 EOF
 }
@@ -241,7 +357,10 @@ case "$1" in
     -h|--help|help)
         show_help
         ;;
+    -l|--list)
+        list_versions
+        ;;
     *)
-        update_kernel "$1"
+        update_kernel "$@"
         ;;
 esac
