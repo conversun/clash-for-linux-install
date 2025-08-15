@@ -7,20 +7,66 @@
 # 加载通用函数
 source "$(dirname "$0")/common.sh"
 
-# 下载 mihomo 内核
-_download_mihomo() {
-    local version=$1
-    local arch=$2
-    local kernel_name="mihomo"
+# 检测x86_64 CPU支持的最高版本
+_detect_x86_64_version() {
+    # 检查是否为x86_64架构
+    if [ "$(uname -m)" != "x86_64" ]; then
+        echo "amd64-v1"
+        return
+    fi
     
-    # 架构映射
+    # 检查CPU特性
+    local cpu_flags=""
+    if [ -f /proc/cpuinfo ]; then
+        cpu_flags=$(grep -m1 "^flags" /proc/cpuinfo | cut -d: -f2)
+    fi
+    
+    # 如果无法读取CPU特性，使用v1作为默认值
+    if [ -z "$cpu_flags" ]; then
+        echo "amd64-v1"
+        return
+    fi
+    
+    # amd64-v3需要的特性：avx2, bmi1, bmi2, f16c, fma, lzcnt, movbe, osxsave
+    if echo "$cpu_flags" | grep -q "avx2" && \
+       echo "$cpu_flags" | grep -q "bmi1" && \
+       echo "$cpu_flags" | grep -q "bmi2" && \
+       echo "$cpu_flags" | grep -q "f16c" && \
+       echo "$cpu_flags" | grep -q "fma" && \
+       echo "$cpu_flags" | grep -q "lzcnt" && \
+       echo "$cpu_flags" | grep -q "movbe"; then
+        echo "amd64-v3"
+        return
+    fi
+    
+    # amd64-v2需要的特性：cmpxchg16b, lahf_lm, popcnt, sse4_1, sse4_2, ssse3
+    if echo "$cpu_flags" | grep -q "cx16" && \
+       echo "$cpu_flags" | grep -q "lahf_lm" && \
+       echo "$cpu_flags" | grep -q "popcnt" && \
+       echo "$cpu_flags" | grep -q "sse4_1" && \
+       echo "$cpu_flags" | grep -q "sse4_2" && \
+       echo "$cpu_flags" | grep -q "ssse3"; then
+        echo "amd64-v2"
+        return
+    fi
+    
+    # 默认使用v1
+    echo "amd64-v1"
+}
+
+# 架构映射函数
+_get_arch_name() {
+    local arch=$1
+    local arch_name
+    
     case "$arch" in
         custom:*)
             # 使用自定义架构，去掉 custom: 前缀
             arch_name="${arch#custom:}"
             ;;
         x86_64)
-            arch_name="amd64-v3"
+            # 自动检测最适合的x86_64版本
+            arch_name=$(_detect_x86_64_version)
             ;;
         aarch64)
             arch_name="arm64"
@@ -32,6 +78,16 @@ _download_mihomo() {
             _error_quit "不支持的架构：$arch"
             ;;
     esac
+    
+    echo "$arch_name"
+}
+
+# 下载 mihomo 内核
+_download_mihomo() {
+    local version=$1
+    local arch=$2
+    local arch_name=$3
+    local kernel_name="mihomo"
     
     local download_url="https://github.com/MetaCubeX/mihomo/releases/download/${version}/mihomo-linux-${arch_name}-${version}.gz"
     local download_dir="$(dirname "$0")/downloads"
@@ -172,6 +228,10 @@ function update_kernel() {
         arch="custom:$custom_arch"
     fi
     
+    # 获取架构名称
+    local arch_name=$(_get_arch_name "$arch")
+    _okcat '🏗️' "检测到架构：$arch -> $arch_name"
+    
     # 验证权限
     _is_root || _error_quit "需要 root 或 sudo 权限执行"
     
@@ -226,7 +286,7 @@ function update_kernel() {
     _backup_kernel
     
     # 下载新内核
-    _download_mihomo "$version" "$arch"
+    _download_mihomo "$version" "$arch" "$arch_name"
     
     # 查找下载的文件
     local download_dir="$(dirname "$0")/downloads"
@@ -329,9 +389,11 @@ function show_help() {
 支持的架构:
     amd64-v1            x86_64 基础版本（较旧CPU）
     amd64-v2            x86_64 v2版本（2008年后的CPU，支持SSE4.2）
-    amd64-v3            x86_64 v3版本（2013年后的CPU，支持AVX2）- 默认
+    amd64-v3            x86_64 v3版本（2013年后的CPU，支持AVX2）
     arm64               ARM 64位
     armv7               ARM 32位 v7
+    
+注意: x86_64架构会自动检测CPU特性并选择最适合的版本
 
 参数:
     URL      完整的内核下载地址
@@ -346,11 +408,10 @@ function show_help() {
     $(basename "$0") -f v1.19.12        # 强制更新到指定版本
     $(basename "$0") -a amd64-v1 v1.19.12  # 使用 amd64-v1 架构更新到指定版本
 
-架构选择建议:
-    - 如果CPU较旧（2008年前），使用 amd64-v1
-    - 如果CPU支持SSE4.2（2008-2013年），使用 amd64-v2
-    - 如果CPU支持AVX2（2013年后），使用 amd64-v3（推荐）
-    - ARM设备自动选择对应架构
+架构选择说明:
+    - x86_64系统会自动检测CPU特性并选择最优版本（v1/v2/v3）
+    - ARM设备自动选择对应架构（arm64/armv7）
+    - 可使用 -a 参数手动指定架构版本
 
 EOF
 }
