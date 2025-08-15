@@ -112,7 +112,7 @@ _backup_kernel() {
 # 安装新内核
 _install_kernel() {
     local kernel_gz=$1
-    local temp_kernel="/tmp/$(basename "$kernel_gz" .gz)"
+    local temp_kernel="/tmp/mihomo_temp_$(date +%s)"
     
     # 解压内核
     _okcat '📦' "正在解压内核..."
@@ -123,7 +123,27 @@ _install_kernel() {
     
     # 验证内核
     _okcat '🔍' "验证内核版本..."
-    "$temp_kernel" -v || _error_quit "内核验证失败"
+    "$temp_kernel" -v || {
+        _failcat "内核验证失败！可能的原因："
+        _failcat "1. 下载的架构版本与 CPU 不兼容"
+        _failcat "2. 如果使用了 --arch 参数，请检查您的 CPU 是否支持该架构"
+        _failcat "3. 建议使用默认架构或尝试更低版本的架构（如 amd64-v2 或 amd64-v1）"
+        
+        # 显示 CPU 信息帮助用户判断
+        if [ -f /proc/cpuinfo ]; then
+            local cpu_flags=$(grep -m1 "^flags" /proc/cpuinfo | cut -d: -f2)
+            _okcat '💡' "CPU 信息参考："
+            if echo "$cpu_flags" | grep -q "avx2"; then
+                echo "  - 您的 CPU 支持 AVX2，可以使用 amd64-v3"
+            elif echo "$cpu_flags" | grep -q "sse4_2"; then
+                echo "  - 您的 CPU 支持 SSE4.2，建议使用 amd64-v2"
+            else
+                echo "  - 您的 CPU 较旧，建议使用 amd64-v1"
+            fi
+        fi
+        
+        _error_quit "内核验证失败"
+    }
     
     # 停止服务
     systemctl is-active "$BIN_KERNEL_NAME" >&/dev/null && {
@@ -134,6 +154,9 @@ _install_kernel() {
     # 安装内核
     sudo mv "$temp_kernel" "$BIN_MIHOMO"
     _okcat '🚀' "内核安装完成：$BIN_MIHOMO"
+    
+    # 清理临时文件
+    [ -f "$temp_kernel" ] && rm -f "$temp_kernel"
     
     # 更新内核变量
     _set_bin
