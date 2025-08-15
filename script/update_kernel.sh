@@ -230,7 +230,7 @@ function update_kernel() {
     
     # 查找下载的文件
     local download_dir="$(dirname "$0")/downloads"
-    local kernel_gz=$(find "$download_dir" -name "mihomo-linux-*-${version}.gz" -type f | head -1)
+    local kernel_gz=$(find "$download_dir" -name "mihomo-linux-${arch_name}-${version}.gz" -type f | head -1)
     [ -z "$kernel_gz" ] && _error_quit "未找到下载的内核文件"
     
     # 安装新内核
